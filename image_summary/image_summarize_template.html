@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ metadata.group_name | default('本群') }}日报 - {{ metadata.date | default('未知日期') }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"> <style>
+        /* Ensure CSS variables are defined correctly */
+        :root {
+            --bg-primary: #0f0e17;
+            --bg-secondary: #1a1925;
+            --bg-tertiary: #252336;
+            --text-primary: #fffffe;
+            --text-secondary: #a7a9be;
+            --accent-primary: #ff8906;
+            --accent-blue: #3da9fc;
+            --accent-secondary: #f25f4c;
+            --accent-tertiary: #e53170;
+            --accent-purple: #7209b7; /* Added from full */
+            --accent-cyan: #00b4d8;
+            --main-bg-color: #f4f7f9;
+            --card-bg-color: #ffffff;
+            --header-bg-color: #f0f5ff;
+            --primary-text: #333333;
+            --secondary-text: #666666;
+            --accent-color: #1890ff;
+            --border-color: #e8e8e8;
+            --border-radius: 6px;
+        }
+        /* Reset margins and padding */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            font-size: 21px;
+            /* Removed fixed width, margin, and padding */
+        }
+        /* Added container class */
+        .container {
+             /* max-width: 1080px; */ /* 移除或注释掉 max-width */
+             margin: 20px; /* 设置 上、右、下、左 外边距均为 20px */
+             padding: 0;   /* 移除容器的左右内边距 */
+             /* overflow: hidden; /* Optional: if elements inside have issues */
+        }
+
+        header {
+            text-align: center;
+            padding: 20px 0; /* Padding inside header */
+            background-color: var(--bg-secondary);
+            margin-bottom: 20px;
+             /* border-radius: var(--border-radius); /* Optional: Rounded corners */
+        }
+        h1 {
+            font-size: 37px; /* Adjusted size */
+            color: var(--accent-primary);
+            margin-bottom: 5px;
+        }
+        .date {
+            font-size: 21px;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+        .meta-info {
+            display: flex;
+            flex-wrap: wrap; /* Allow wrapping on smaller screens */
+            justify-content: center;
+            gap: 10px 15px; /* Vertical and horizontal gap */
+            font-size: 19px;
+            padding: 0 10px; /* Add padding for smaller screens */
+        }
+        .meta-info span {
+            background-color: var(--bg-tertiary);
+            padding: 4px 12px;
+            border-radius: 15px;
+            white-space: nowrap; /* Prevent text wrapping inside span */
+        }
+        section {
+            background-color: var(--bg-secondary);
+            margin-bottom: 20px;
+            padding: 20px;
+             /* border-radius: var(--border-radius); /* Optional: Rounded corners */
+        }
+        h2 {
+            font-size: 29px;
+            color: var(--accent-blue);
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--accent-blue);
+        }
+        h3 {
+            font-size: 24px;
+            color: var(--accent-primary);
+            margin: 10px 0 8px 0;
+        }
+        p {
+            margin-bottom: 10px;
+             word-wrap: break-word; /* Ensure long words break */
+        }
+        ul, ol {
+            margin-left: 20px; /* Keep indentation */
+            margin-bottom: 10px;
+            padding-left: 15px; /* Added padding for list markers */
+        }
+        li {
+            margin-bottom: 5px;
+            font-size: 20px;
+        }
+        .card {
+            background-color: var(--bg-tertiary);
+            padding: 15px;
+            margin-bottom: 15px;
+             /* border-radius: var(--border-radius); /* Optional: Rounded corners */
+        }
+        .meta {
+            color: var(--text-secondary);
+            font-size: 17px;
+            margin-bottom: 5px;
+             display: flex; /* Use flexbox for alignment */
+             flex-wrap: wrap; /* Allow wrapping */
+             gap: 5px 10px; /* Add spacing between items */
+        }
+        .meta span {
+            /* margin-right removed, using gap now */
+             white-space: nowrap; /* Prevent wrapping inside span */
+        }
+        .keyword, .tag {
+            background-color: rgba(61, 169, 252, 0.2);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 17px;
+            display: inline-block;
+            margin-right: 5px;
+            margin-bottom: 5px;
+        }
+        .keywords, .tags { /* Ensure keywords/tags wrap */
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 8px;
+        }
+        .priority { /* Base priority style */
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 16px;
+            color: white; /* Assuming all priorities have white text */
+             margin-left: 5px; /* Space it from previous items */
+        }
+        .priority-high { background-color: var(--accent-secondary); }
+        .priority-medium { background-color: var(--accent-primary); }
+        .priority-low { background-color: var(--accent-blue); }
+
+        .answer {
+            background-color: rgba(255, 255, 255, 0.05);
+            padding: 10px;
+            margin-top: 10px;
+             border-radius: calc(var(--border-radius) / 2); /* Optional */
+        }
+        .accepted-badge {
+            background-color: var(--accent-primary);
+            color: var(--text-primary);
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 16px;
+            margin-left: 5px;
+        }
+
+        /* Tutorial Styles */
+        .tutorials-container, .dialogues-container, .night-owls-container {
+             /* Removed grid layout for simpler stacking on mobile */
+             /* display: grid; */
+             /* grid-template-columns: 1fr; */
+             /* gap: 15px; */
+        }
+        .tutorial-card, .dialogue-card, .night-owl-item {
+            background-color: var(--bg-tertiary);
+            padding: 15px;
+            margin-bottom: 15px; /* Keep margin for non-grid layout */
+             /* border-radius: var(--border-radius); /* Optional */
+        }
+         /* Specific card types for consistency */
+         .topic-card, .message-card, .qa-card {
+              /* border-radius: var(--border-radius); /* Optional */
+         }
+
+        .tutorial-type {
+            display: inline-block;
+            background-color: var(--accent-secondary);
+            color: var(--text-primary);
+            padding: 3px 10px;
+            border-radius: 15px;
+            font-size: 19px;
+            margin-bottom: 10px;
+        }
+        .tutorial-meta {
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+            font-size: 19px;
+             display: flex;
+             flex-wrap: wrap;
+             gap: 5px 15px;
+        }
+        .tutorial-meta span { /* No margin-right needed due to gap */ }
+        .tutorial-category {
+            margin-top: 10px;
+            font-style: italic;
+            color: var(--text-secondary);
+            font-size: 17px;
+        }
+        .tutorial-card h4 {
+            font-size: 21px;
+            color: var(--text-secondary);
+            margin: 10px 0 5px 0;
+        }
+         .tutorial-card a { /* Style links */
+              color: var(--accent-blue);
+              text-decoration: none;
+         }
+         .tutorial-card a:hover {
+              text-decoration: underline;
+         }
+
+        /* Dialogue Styles */
+        .dialogue-type {
+            display: inline-block;
+            background-color: var(--accent-tertiary);
+            color: var(--text-primary);
+            padding: 3px 10px;
+            border-radius: 15px;
+            font-size: 19px;
+            margin-bottom: 10px;
+        }
+        .dialogue-content {
+            background-color: rgba(255, 255, 255, 0.05);
+            padding: 10px;
+            margin: 10px 0;
+            font-size: 19px;
+             border-radius: calc(var(--border-radius) / 2); /* Optional */
+        }
+        .dialogue-highlight {
+            font-style: italic;
+            color: var(--accent-primary);
+            margin: 10px 0;
+            font-weight: 600;
+             background-color: rgba(255, 137, 6, 0.1); /* Slight background for highlight */
+             padding: 5px 10px;
+             border-radius: 4px;
+             display: inline-block; /* Fit content */
+        }
+        .dialogue-topic {
+            font-size: 17px;
+            color: var(--text-secondary);
+            margin-top: 10px;
+        }
+
+        /* Analytics Section */
+        .analytics h3 {
+            font-size: 27px;
+            color: var(--accent-secondary);
+            margin-top: 25px;
+            margin-bottom: 15px;
+        }
+
+        /* Heatmap */
+        .heatmap-container {
+            display: grid; /* Keep grid here */
+            grid-template-columns: 1fr;
+            gap: 10px;
+        }
+        .heat-item {
+            display: grid;
+            grid-template-columns: auto 1fr auto; /* Topic | Bar | Count */
+            gap: 10px;
+            align-items: center;
+            font-size: 19px;
+            background-color: var(--bg-tertiary);
+            padding: 8px 12px;
+            border-radius: calc(var(--border-radius) / 2); /* Optional */
+             overflow: hidden; /* Prevent bar overflow */
+        }
+        .heat-topic {
+             font-weight: 600;
+             white-space: nowrap;
+             overflow: hidden;
+             text-overflow: ellipsis; /* Handle long topics */
+             max-width: 300px; /* Adjust as needed */
+        }
+        .heat-bar {
+            height: 15px;
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            overflow: hidden;
+             min-width: 50px; /* Ensure bar is visible */
+        }
+        .heat-fill {
+            height: 100%;
+            border-radius: 2px;
+            width: 0; /* Start at 0, set by JS */
+            background-color: #cccccc; /* Default, set by JS */
+            transition: width 0.5s ease-in-out; /* Animate bar fill */
+        }
+        .heat-count {
+            color: var(--text-secondary);
+            text-align: right;
+             white-space: nowrap;
+        }
+
+        /* Participants (Talkers) */
+        .participants-container {
+            display: grid;
+             /* Adjust grid for responsiveness */
+             grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 15px;
+        }
+        .participant-item {
+            background-color: var(--bg-tertiary);
+            padding: 15px;
+            display: flex;
+            gap: 15px;
+             /* border-radius: var(--border-radius); /* Optional */
+        }
+        .participant-rank {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--accent-primary);
+            line-height: 1.2;
+             flex-shrink: 0; /* Prevent rank from shrinking */
+        }
+        .participant-info {
+            flex-grow: 1;
+             min-width: 0; /* Allow info to shrink */
+        }
+        .participant-name {
+            font-weight: 600;
+            font-size: 21px;
+            margin-bottom: 3px;
+        }
+        .participant-count {
+            color: var(--accent-cyan);
+            margin-bottom: 8px;
+            font-size: 17px;
+        }
+        .participant-profile {
+            font-style: italic;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            font-size: 17px;
+        }
+        .participant-keywords {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+             margin-top: 8px; /* Space from profile */
+        }
+        .participant-keywords .keyword {
+            font-size: 16px;
+            padding: 2px 8px;
+            margin: 0; /* Remove default margin */
+        }
+
+        /* Night Owl */
+        /* .night-owls-container remains default block */
+        .night-owl-item {
+            /* Keeping styles from original */
+            padding: 15px;
+            background-color: var(--bg-tertiary);
+             display: flex; /* Use flex for alignment */
+             align-items: flex-start; /* Align items to the top */
+             gap: 15px;
+        }
+        .owl-crown {
+            font-size: 30px;
+            /* display: inline-block; */ /* No longer needed with flex */
+            /* margin-right: 10px; */ /* Using gap */
+            line-height: 1; /* Adjust line height for emoji */
+            flex-shrink: 0;
+         }
+        .owl-info {
+             /* display: inline-block; */ /* No longer needed */
+             /* vertical-align: top; */ /* No longer needed */
+             flex-grow: 1;
+             min-width: 0; /* Allow shrink */
+        }
+        .owl-name { font-weight: 600; font-size: 21px; margin-bottom: 3px; }
+        .owl-title { color: var(--accent-primary); font-style: italic; margin-bottom: 5px; font-size: 19px; }
+        .owl-time, .owl-messages { color: var(--text-secondary); margin-bottom: 3px; font-size: 17px; /* display: block; */ /* Default */}
+        .owl-last-message { font-size: 17px; color: var(--text-secondary); margin-top: 8px; font-style: italic; /* display: block; */ /* Default */ }
+
+        /* Word Cloud Section */
+        .word-cloud-container {
+            background-color: var(--bg-tertiary);
+            padding: 20px;
+            text-align: center;
+             /* border-radius: var(--border-radius); /* Optional */
+        }
+        .cloud-word {
+            display: inline-block;
+            padding: 4px 8px;
+            margin: 4px;
+            border-radius: 8px;
+            font-size: 21px; /* Default, set by JS */
+            color: #fffffe; /* Default, set by JS */
+            background-color: rgba(255, 255, 254, 0.1);
+            line-height: 1.2; /* Adjust line height for different sizes */
+             transition: transform 0.2s ease; /* Optional hover effect */
+        }
+         .cloud-word:hover {
+              transform: scale(1.1); /* Optional hover effect */
+         }
+
+        footer {
+            text-align: center;
+            padding: 20px 0; /* Increased padding slightly */
+            margin-top: 30px;
+            background-color: var(--bg-secondary);
+            color: var(--text-secondary);
+            font-size: 16px;
+             /* border-radius: var(--border-radius); /* Optional */
+        }
+         footer p {
+              margin-bottom: 5px; /* Reduce footer paragraph spacing */
+              padding: 0 10px; /* Add padding for narrow screens */
+         }
+
+         /* Responsive Adjustments */
+         @media (max-width: 768px) {
+             h1 { font-size: 32px; }
+             h2 { font-size: 27px; }
+             h3 { font-size: 23px; }
+             .container { padding: 0 15px; margin: 15px auto; }
+             section, .card, header, footer { padding: 15px; }
+             .meta-info { gap: 8px 10px; }
+             .heat-item { grid-template-columns: 1fr auto; gap: 8px; } /* Stack topic above bar */
+             .heat-topic { grid-row: 1; grid-column: 1 / 3; white-space: normal; max-width: none; }
+             .heat-bar { grid-row: 2; grid-column: 1 / 2; }
+             .heat-count { grid-row: 2; grid-column: 2 / 3; }
+         }
+
+         @media (max-width: 480px) {
+             body { font-size: 20px; }
+             h1 { font-size: 29px; }
+             h2 { font-size: 25px; }
+             h3 { font-size: 21px; }
+             .container { padding: 0 10px; margin: 10px auto; }
+             section, .card, header, footer { padding: 10px; }
+             .meta-info span { padding: 3px 8px; font-size: 17px;}
+             .participants-container { grid-template-columns: 1fr; } /* Stack participants */
+             .participant-item { gap: 10px; }
+             .participant-rank { font-size: 27px; }
+             .owl-item { flex-direction: column; align-items: center; text-align: center; } /* Stack owl info */
+             .owl-crown { margin-bottom: 10px; }
+         }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>{{ metadata.group_name | default('本群') }}日报</h1>
+            <p class="date">{{ metadata.date | default('未知日期') }}</p>
+            {% if metadata %}
+            <div class="meta-info">
+                <span>总消息数：{{ metadata.total_messages | default('N/A') }}</span>
+                <span>活跃用户：{{ metadata.active_users | default('N/A') }}</span>
+                <span>时间范围：{{ metadata.time_range | default('N/A') }}</span>
+            </div>
+            {% endif %}
+        </header>
+
+        {% if hot_topics %}
+        <section class="hot-topics">
+            <h2>今日讨论热点</h2>
+            {% for topic in hot_topics %}
+            <div class="card topic-card">
+                <h3>{{ topic.title | default('未知话题') }}</h3>
+                <div class="meta"> {# Wrap meta info for better layout #}
+                    {% if topic.category %}<span>分类: {{ topic.category }}</span>{% endif %}
+                    {% if topic.mention_count is defined %}<span>提及: {{ topic.mention_count }}次</span>{% endif %}
+                </div>
+                <p>{{ topic.summary | default('无总结') }}</p>
+                {% if topic.keywords %}
+                <div class="keywords">
+                    {% for keyword in topic.keywords %}
+                    <span class="keyword">{{ keyword }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            {% else %}
+            <p>今日无明显热点话题。</p>
+            {% endfor %}
+        </section>
+        {% endif %}
+
+        {% if important_messages %}
+        <section class="important-messages">
+            <h2>重要消息汇总</h2>
+            {% for msg in important_messages %}
+            <div class="card message-card">
+                <div class="meta">
+                    <span>{{ msg.time | default('未知时间') }}</span>
+                    <span>{{ msg.sender | default('未知用户') }}</span>
+                    {% if msg.type %}<span>类型: {{ msg.type }}</span>{% endif %}
+                    {% if msg.priority %}
+                        <span class="priority priority-{{ msg.priority | lower }}">{{ msg.priority }}</span>
+                    {% endif %}
+                </div>
+                <p>{{ msg.content | default('无内容') }}</p>
+                {% if msg.full_content and msg.full_content != msg.content %}
+                <details><summary style="font-size:17px; cursor:pointer; color: var(--accent-blue);">查看全文</summary><p style="font-size:19px; margin-top:5px; color: var(--text-secondary);">{{ msg.full_content }}</p></details>
+                {% endif %}
+            </div>
+            {% else %}
+            <p>今日无重要消息。</p>
+            {% endfor %}
+        </section>
+        {% endif %}
+
+        {% if qa_pairs %}
+        <section class="questions-answers">
+            <h2>问题与解答</h2>
+            <div class="qa-container">
+                {% for qa in qa_pairs %}
+                <div class="card qa-card">
+                    <div class="question">
+                        <div class="meta">
+                            <span>提问: {{ qa.question.asker | default('匿名') }}</span>
+                            <span>@ {{ qa.question.time | default('未知时间') }}</span>
+                        </div>
+                        <p>{{ qa.question.content | default('无问题内容') }}</p>
+                        {% if qa.question.tags %}
+                        <div class="tags">
+                            {% for tag in qa.question.tags %}
+                            <span class="tag">{{ tag }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% if qa.answers %}
+                    <div class="answers" style="margin-top: 15px;"> {# Add margin before answers #}
+                        {% for ans in qa.answers %}
+                        <div class="answer">
+                            <div class="meta">
+                                <span>回答: {{ ans.responder | default('匿名') }}</span>
+                                <span>@ {{ ans.time | default('未知时间') }}</span>
+                                {% if ans.is_accepted %}
+                                <span class="accepted-badge">最佳回答</span>
+                                {% endif %}
+                            </div>
+                            <p>{{ ans.content | default('无回答内容') }}</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% else %}
+                <p>今日无问答记录。</p>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if tutorials %}
+        <section class="tutorials">
+            <h2>实用教程与资源分享</h2>
+            <div class="tutorials-container">
+                {% for tut in tutorials %}
+                <div class="tutorial-card">
+                    {% if tut.type %}<div class="tutorial-type">{{ tut.type }}</div>{% endif %}
+                    <h3>{{ tut.title | default('无标题') }}</h3>
+                    <div class="tutorial-meta">
+                        {% if tut.shared_by %}<span>分享者：{{ tut.shared_by }}</span>{% endif %}
+                        {% if tut.time %}<span>时间：{{ tut.time }}</span>{% endif %}
+                    </div>
+                    {% if tut.summary %}<p>{{ tut.summary }}</p>{% endif %}
+                    {% if tut.key_points %}
+                    <div>
+                        <h4>要点：</h4>
+                        <ul>
+                            {% for point in tut.key_points %}
+                            <li>{{ point }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+                    {% if tut.link and tut.link != '无' %}<p><a href="{{ tut.link }}" target="_blank" rel="noopener noreferrer">查看链接</a></p>{% endif %} {# Added target blank #}
+                    {% if tut.category %}<div class="tutorial-category">分类：{{ tut.category }}</div>{% endif %}
+                </div>
+                {% else %}
+                <p>今日无实用教程或资源分享。</p>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if dialogues %}
+        <section class="interesting-dialogues">
+            <h2>有趣对话或金句</h2>
+            <div class="dialogues-container">
+                {% for dlg in dialogues %}
+                <div class="dialogue-card">
+                     {% if dlg.type %}<div class="dialogue-type">{{ dlg.type }}</div>{% endif %}
+                     {% if dlg.highlight %}<div class="dialogue-highlight">金句：{{ dlg.highlight }}</div>{% endif %}
+                     {% if dlg.messages %}
+                     <div class="dialogue-content">
+                         {% for msg in dlg.messages %}
+                         <p>{{ msg }}</p> {# Assuming messages is just a list of strings based on JSON #}
+                         {% endfor %}
+                     </div>
+                     {% endif %}
+                     {% if dlg.related_topic %}<div class="dialogue-topic">相关话题：{{ dlg.related_topic }}</div>{% endif %}
+                </div>
+                {% else %}
+                <p>今日无有趣对话或金句记录。</p>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        {% if analytics %}
+        <section class="analytics">
+            <h2>群内数据可视化</h2>
+
+            {% if analytics.heatmap %}
+            <h3>话题热度</h3>
+            <div class="heatmap-container">
+                {% for item in analytics.heatmap %}
+                <div class="heat-item">
+                    <span class="heat-topic" title="{{ item.topic | default('未知话题') }}">{{ item.topic | default('未知话题') }}{% if item.percentage and item.percentage != 'N/A' %} ({{ item.percentage }}%){% endif %}</span>
+                    <div class="heat-bar">
+                        <div class="heat-fill" data-percentage="{{ item.percentage | default(0) }}" data-color="{{ item.color | default('#cccccc') }}"></div>
+                    </div>
+                    <span class="heat-count">{{ item.count | default('?') }}条</span>
+                </div>
+                {% else %}
+                <p>无话题热度数据。</p>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if analytics.participants %}
+            <h3>话唠榜</h3>
+            <div class="participants-container">
+                {% for p in analytics.participants %}
+                <div class="participant-item">
+                    <div class="participant-rank">{{ p.rank | default('#') }}</div>
+                    <div class="participant-info">
+                        <div class="participant-name">{{ p.name | default('匿名') }}</div>
+                        <div class="participant-count">{{ p.message_count | default(0) }} 条消息</div>
+                        {% if p.profile %}<div class="participant-profile">特征: {{ p.profile }}</div>{% endif %}
+                        {% if p.keywords %}
+                        <div class="participant-keywords">
+                            <span>常用词:</span>
+                            {% for kw in p.keywords %}
+                            <span class="keyword">{{ kw }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                {% else %}
+                <p>无话唠榜数据。</p>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            {% if analytics.night_owl %}
+            <h3>熬夜冠军</h3>
+            <div class="night-owls-container">
+                <div class="night-owl-item">
+                    <div class="owl-crown" title="熬夜冠军">🦉</div> {# Using owl emoji #}
+                    <div class="owl-info">
+                        <div class="owl-name">{{ analytics.night_owl.name | default('匿名') }}</div>
+                        {% if analytics.night_owl.title %}<div class="owl-title">{{ analytics.night_owl.title }}</div>{% endif %}
+                        <div class="owl-time">最晚活跃时间：{{ analytics.night_owl.time | default('未知') }}</div>
+                        <div class="owl-messages">深夜消息数：{{ analytics.night_owl.message_count | default(0) }}</div>
+                        {% if analytics.night_owl.message %}<div class="owl-last-message">代表性消息: "{{ analytics.night_owl.message }}"</div>{% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+        </section>
+        {% endif %}
+
+        {% if word_cloud %}
+        <section class="word-cloud">
+            <h2>热门词云</h2>
+            <div class="word-cloud-container">
+                {% for word in word_cloud %}
+                <span class="cloud-word" data-size="{{ word.size | default(21) }}" data-color="{{ word.color | default('#fffffe') }}" style="font-size: {{ word.size | default(21) }}px; color: {{ word.color | default('#fffffe') }};"> {# Apply style directly for non-JS rendering #}
+                    {{ word.text | default('') }}
+                </span>
+                {% else %}
+                <p>无词云数据。</p>
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        <footer>
+            <p>数据来源：{{ metadata.group_name | default('本群') }}聊天记录</p>
+            <p>生成时间：{{ generation_time | default('现在') }}</p>
+            <p>统计周期：{{ metadata.date | default('未知日期') }} {{ metadata.time_range | default('') }}</p>
+            <p>免责声明：本报告内容基于群聊公开讨论，如有不当内容或侵权问题请联系管理员处理。</p>
+        </footer>
+    </div><script>
+    // 设置热度条样式
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.heat-fill').forEach(el => {
+            const percentage = el.getAttribute('data-percentage');
+            const color = el.getAttribute('data-color');
+            // Use setTimeout to trigger transition after initial render
+            setTimeout(() => {
+                 el.style.width = percentage + '%';
+                 el.style.backgroundColor = color;
+            }, 100); // Small delay
+        });
+    });
+    </script>
+</body>
+</html>

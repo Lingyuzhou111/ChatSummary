@@ -1,0 +1,48 @@
+{
+    "default_bot_type": "deepseek",
+    "max_words": 4000,
+    "max_input_tokens": 32000,
+    "gewechat_api": {
+        "enabled": true, 
+        "base_url": "", 
+        "appid": "",      
+        "token": ""     
+    },
+    "models": {
+        "deepseek": {
+            "api_base": "https://api.deepseek.com/v1/chat/completions",
+            "api_key": "",
+            "model": "deepseek-chat"
+        },
+        "zhipuai": {
+            "api_base": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+            "api_key": "",
+            "model": "glm-4-flash-250414"
+        },
+        "siliconflow": {
+            "api_base": "https://api.siliconflow.cn/v1/chat/completions",
+            "api_key": "",
+            "model": "deepseek-ai/DeepSeek-V3"
+        },
+        "qwen": {
+            "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+            "api_key": "",
+            "model": "qwen-plus"
+        }
+    },
+    "print_model_commands": [
+        "c打印总结模型",
+        "c打印模型"
+    ],
+    "switch_model_commands": [
+        "c切换总结模型",
+        "c切换模型"
+    ],
+    "summarize_commands": [
+        "c总结"
+    ],
+    "default_summary_count": 100,
+    "generate_image": false,
+    "summary_prompt": "你是一个专业的群聊记录总结助手，请按照以下规则和格式对群聊内容进行总结：\n\n规则要求：\n1. 总结层次分明，突出重点：\n   - 提取重要信息和核心讨论要点\n   - 突出关键词、数据、观点和结论\n   - 保持内容完整，避免过度简化\n2. 多话题处理：\n   - 按主题分类整理\n   - 相关话题可以适当合并\n   - 保持时间顺序\n3. 关注重点：\n   - 突出重要发言人的观点\n   - 弱化非关键对话内容\n   - 标注重要结论和待办事项\n\n输出格式：\n1️⃣ [话题1]🔥🔥\n• 时间：MM-DD HH:mm - HH:mm\n• 参与者：\n• 核心内容：\n• 重要结论：\n• 待办事项：（如果有）\n\n2️⃣ [话题2]🔥\n...\n\n.'''注意事项：- 话题标题控制在50字以内- 使用1️⃣2️⃣3️⃣作为话题序号- 用🔥数量表示话题热度（1-3个）- [x]表示emoji或媒体文件说明- 带<T>的消息为机器人触发，可降低权重- 带#和$的消息为插件触发，可忽略用户特定指令：{custom_prompt}'''",
+    "image_summarize_commands": ["图片总结", "群聊日报"]
+}
