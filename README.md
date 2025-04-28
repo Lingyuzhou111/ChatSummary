@@ -5,6 +5,9 @@
 
 聊天记录总结助手 (ChatSummary) 是一个功能强大的插件，用于自动记录、总结和可视化群聊或私聊的对话内容。
 
+## 效果展示
+![96a8ef576a9246f44376ef7340a8353](https://github.com/user-attachments/assets/5c9c6498-e6de-452d-943f-a6a81be38607)
+
 ## 功能特点
 
 -   **自动消息记录**: 保存群聊和私聊的文本消息至 SQLite 数据库 (`chat.db`)。
@@ -16,9 +19,6 @@
 -   **自动清理**: 定期清理旧的图片总结输出文件，保持空间整洁。
 
 ## 使用方法
-
-### 效果展示
-![96a8ef576a9246f44376ef7340a8353](https://github.com/user-attachments/assets/5c9c6498-e6de-452d-943f-a6a81be38607)
 
 ### 模型管理
 
