@@ -17,6 +17,9 @@
 
 ## 使用方法
 
+### 效果展示
+![96a8ef576a9246f44376ef7340a8353](https://github.com/user-attachments/assets/5c9c6498-e6de-452d-943f-a6a81be38607)
+
 ### 模型管理
 
 -   **查看可用模型**:
