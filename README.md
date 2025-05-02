@@ -58,6 +58,7 @@
 **依赖安装**:
 1.  安装 Python 包: `pip install Jinja2 playwright`
 2.  安装 Playwright 浏览器核心: `playwright install`
+3.  安装系统字体: `yum groupinstall "fonts"`
 
 **工作原理**:
 LLM 根据 `image_summary/image_summarize_prompt.txt` 的指示生成 JSON -> 使用 Jinja2 模板渲染成 HTML -> Playwright 截图保存为 PNG 图片。
