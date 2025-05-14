@@ -14,7 +14,10 @@ from urllib.parse import urlparse
 from pathlib import Path
 import io
 import threading
-import schedule
+try:
+    import schedule
+except ImportError:
+    schedule = None
 
 import plugins
 from bridge.context import ContextType
@@ -28,12 +31,12 @@ from plugins import *
 
 @plugins.register(
     name="ChatSummary",
-    desire_priority=99,
+    desire_priority=999,
     hidden=False,
     enabled=True,
     desc="聊天记录总结助手(支持图片和自动清理)",
-    version="1.2",
-    author="lanvent",
+    version="2.0",
+    author="Lingyuzhou",
 )
 class ChatSummary(Plugin):
    
@@ -170,14 +173,10 @@ class ChatSummary(Plugin):
 
             # Background cleanup task
             try:
-                import schedule
                 logger.info("[ChatSummary] Starting background cleanup scheduler...")
                 self.scheduler_thread = threading.Thread(target=self._run_scheduler, daemon=True)
                 self.scheduler_thread.start()
                 logger.info(f"[ChatSummary] Cleanup scheduler started for directory: {self.cleanup_target_dir}")
-            except ImportError:
-                logger.warning("[ChatSummary] 'schedule' library not found. Automatic cleanup disabled.")
-                logger.warning("[ChatSummary] Please install it using: pip install schedule")
             except Exception as scheduler_e:
                 logger.error(f"[ChatSummary] Failed to start cleanup scheduler: {scheduler_e}", exc_info=True)
 
@@ -327,9 +326,15 @@ class ChatSummary(Plugin):
         """从数据库获取记录 (只获取文本类型)"""
         c = self.conn.cursor()
         target_type = str(ContextType.TEXT)
-        c.execute("SELECT * FROM chat_records WHERE sessionid=? and timestamp>? AND type=? ORDER BY timestamp DESC LIMIT ?",
-                  (session_id, start_timestamp, target_type, limit))
-        return c.fetchall()
+        # 确保start_timestamp是整数，避免浮点数比较问题
+        start_timestamp = int(start_timestamp)
+        logger.debug(f"[ChatSummary PANDA_DEBUG] _get_records called with session_id='{session_id}', start_timestamp={start_timestamp}, target_type='{target_type}', limit={limit}")
+        query = "SELECT * FROM chat_records WHERE sessionid=? and timestamp>? AND type=? ORDER BY timestamp DESC LIMIT ?"
+        logger.debug(f"[ChatSummary PANDA_DEBUG] _get_records SQL query: {query} with params ({session_id}, {start_timestamp}, {target_type}, {limit})")
+        c.execute(query, (session_id, start_timestamp, target_type, limit))
+        results = c.fetchall()
+        logger.debug(f"[ChatSummary PANDA_DEBUG] _get_records query returned {len(results) if results else 'None'} records.")
+        return results
 
     def on_receive_message(self, e_context: EventContext):
         """处理接收到的消息，存储到数据库"""
@@ -337,7 +342,12 @@ class ChatSummary(Plugin):
         context = e_context['context']
         cmsg : ChatMessage = e_context['context']['msg']
 
+        logger.debug(f"[ChatSummary PANDA_INGEST_DEBUG L1] Raw message data: cmsg.other_user_id='{cmsg.other_user_id}', cmsg.from_user_id='{cmsg.from_user_id}', cmsg.actual_user_nickname='{cmsg.actual_user_nickname}', context.content_preview='{str(context.content)[:50]}...', context.type={context.type}, cmsg.create_time={cmsg.create_time}, current_time={time.time()}")
+
         if context.type != ContextType.TEXT:
+             # Attempt to get session_id for logging, might be None
+             temp_session_id_for_log = cmsg.other_user_id if context.get("isgroup") else cmsg.from_user_id
+             logger.debug(f"[ChatSummary PANDA_INGEST_DEBUG L4] Skipping non-text message. Type: {context.type}, Tentative session_id: '{temp_session_id_for_log}'")
              logger.debug(f"[ChatSummary] Skipping non-text message (type: {context.type})")
              return
 
@@ -352,14 +362,18 @@ class ChatSummary(Plugin):
             session_id = cmsg.other_user_id
             if not session_id:
                 logger.warning("[ChatSummary] Group chat message missing other_user_id, cannot determine session_id. Skipping record.")
+                logger.debug(f"[ChatSummary PANDA_INGEST_DEBUG L3a] other_user_id was '{cmsg.other_user_id}', from_user_id was '{cmsg.from_user_id}' when group session_id failed.")
                 return
             username = cmsg.actual_user_nickname or cmsg.actual_user_id
         else:
             session_id = cmsg.from_user_id
             username = cmsg.from_user_nickname or cmsg.from_user_id
+        
+        logger.debug(f"[ChatSummary PANDA_INGEST_DEBUG L2] Determined session_id='{session_id}', username='{username}'")
 
         if not session_id or not username:
              logger.warning(f"[ChatSummary] Could not determine session_id ({session_id}) or username ({username}). Skipping.")
+             logger.debug(f"[ChatSummary PANDA_INGEST_DEBUG L3b] Final check failed: session_id='{session_id}', username='{username}'")
              return
 
         is_triggered = False
@@ -380,6 +394,7 @@ class ChatSummary(Plugin):
                 is_triggered = True
 
         content_to_store = str(content)
+        logger.debug(f"[ChatSummary PANDA_INGEST_DEBUG L5] Preparing to insert: session_id='{session_id}', msg_id={cmsg.msg_id}, user='{username}', content_len={len(content_to_store)}, type={str(context.type)}, timestamp={cmsg.create_time}, is_triggered={int(is_triggered)}")
         self._insert_record(session_id, cmsg.msg_id, username, content_to_store, str(context.type), cmsg.create_time, int(is_triggered))
 
     def on_handle_context(self, e_context: EventContext):
@@ -545,19 +560,25 @@ class ChatSummary(Plugin):
             elif not session_id:
                 logger.error("[ChatSummary] 无法确定 session_id")
                 return "无法确定会话ID，无法进行总结。"
+            logger.debug(f"[ChatSummary PANDA_DEBUG] _handle_summarize for session_id='{session_id}', summary_type='{summary_type}', args={args}")
 
             messages, actual_count = "", 0
             time_info = ""
 
             if summary_type == "time":
                 hours = int(args[0])
-                start_timestamp = time.time() - (hours * 3600)
+                # 使用当前时间戳，确保是过去的时间而不是未来时间
+                current_timestamp = int(time.time())
+                start_timestamp = current_timestamp - (hours * 3600)
+                logger.debug(f"[ChatSummary] 计算时间范围: 当前时间戳={current_timestamp}, 开始时间戳={start_timestamp}, 时间范围={hours}小时")
                 messages, actual_count = self._get_chat_messages_by_time(session_id, start_timestamp)
                 time_info = f"过去{hours}小时内"
             else: # count
                 requested_count = int(args[0])
                 messages, actual_count = self._get_chat_messages_by_count(session_id, requested_count)
                 time_info = f"最近{actual_count}"
+            
+            logger.debug(f"[ChatSummary PANDA_DEBUG] _handle_summarize after get_chat_messages: actual_count={actual_count}, messages_len={len(messages) if messages else 0}")
 
             if not messages:
                 return f"在{time_info}没有找到可总结的消息。"
@@ -588,7 +609,11 @@ class ChatSummary(Plugin):
     def _get_chat_messages_by_time(self, session_id, start_timestamp):
         """按时间范围获取文本聊天记录"""
         try:
+            # 确保start_timestamp是整数，避免浮点数比较问题
+            start_timestamp = int(start_timestamp)
+            logger.debug(f"[ChatSummary PANDA_DEBUG] _get_chat_messages_by_time called for session_id='{session_id}', start_timestamp={start_timestamp}")
             records = self._get_records(session_id, start_timestamp, 1000) # Limit 足够大
+            logger.debug(f"[ChatSummary PANDA_DEBUG] _get_chat_messages_by_time received {len(records) if records else 'None'} records from _get_records.")
             if not records:
                 return None, 0
 
@@ -604,19 +629,28 @@ class ChatSummary(Plugin):
                 content = record[3]
                 user = record[2] or "未知用户"
                 timestamp = record[5]
-                is_triggered = record[6] # 0 or 1
+                is_triggered = record[6] # 0 or 1 # We keep reading this for logging/potential future use, but don't filter on it anymore
+                logger.debug(f"[ChatSummary PANDA_DEBUG] Processing record: msg_id={msg_id}, user='{user}', ts={timestamp}, is_triggered={is_triggered}, content_preview='{str(content)[:50]}...'")
 
-                # 只添加非触发、非空的内容
-                if content and not is_triggered:
+                # --- 修改开始 ---
+                # 只添加非空且不以 # 开头的内容
+                if content and not content.strip().startswith('#'):
                     time_str = time.strftime("%m-%d %H:%M", time.localtime(timestamp))
                     # <T> 标记逻辑可以保留或移除，取决于 Prompt 是否需要
                     user_marker = "<T>" if user.lower() in ["system", "admin"] else ""
                     formatted_messages.append(f"{user_marker}[{time_str}] {user}: {content.strip()}")
                     actual_msg_count += 1
+                else:
+                    # 更新日志，反映新的跳过原因
+                    starts_with_hash = content.strip().startswith('#') if content else False
+                    logger.debug(f"[ChatSummary PANDA_DEBUG] Skipping record: msg_id={msg_id}. Reason: content_empty={not bool(content)}, starts_with_hash={starts_with_hash}")
+                # --- 修改结束 ---
 
             if not formatted_messages:
+                logger.debug(f"[ChatSummary PANDA_DEBUG] _get_chat_messages_by_time: No formatted messages after filtering.")
                 return None, 0
-
+            
+            logger.debug(f"[ChatSummary PANDA_DEBUG] _get_chat_messages_by_time returning {len(formatted_messages)} formatted messages, actual_msg_count={actual_msg_count}")
             return "\n".join(formatted_messages), actual_msg_count
         except Exception as e:
             logger.error(f"[ChatSummary] 获取时间范围消息失败: {e}")
@@ -628,7 +662,12 @@ class ChatSummary(Plugin):
             # 稍微多获取一些记录，因为需要跳过触发消息
             limit = int(msg_count * 1.5) + 10 # 增加获取量
             # 获取最近 N 天可能不够，直接按 limit 获取最新的
-            records = self._get_records(session_id, 0, limit) # start_timestamp=0 获取所有
+            logger.debug(f"[ChatSummary PANDA_DEBUG] _get_chat_messages_by_count called for session_id='{session_id}', msg_count={msg_count}, calculated_limit={limit}") # PANDA_DEBUG
+            # 确保使用整数时间戳，0表示获取所有记录
+            start_timestamp = 0
+            logger.debug(f"[ChatSummary] 获取消息: 开始时间戳={start_timestamp} (获取所有记录)")
+            records = self._get_records(session_id, start_timestamp, limit) # start_timestamp=0 获取所有
+            logger.debug(f"[ChatSummary PANDA_DEBUG] _get_chat_messages_by_count received {len(records) if records else 'None'} records from _get_records.") # PANDA_DEBUG
 
             if not records:
                 return None, 0
@@ -650,18 +689,27 @@ class ChatSummary(Plugin):
                 user = record[2] or "未知用户"
                 timestamp = record[5]
                 is_triggered = record[6]
+                logger.debug(f"[ChatSummary PANDA_DEBUG] Processing record (count): msg_id={msg_id}, user='{user}', ts={timestamp}, is_triggered={is_triggered}, content_preview='{str(content)[:50]}...'") # PANDA_DEBUG
 
-                # 只添加非触发、非空的内容
-                if content and not is_triggered:
+                # --- 修改开始 ---
+                # 只添加非空且不以 # 开头的内容
+                if content and not content.strip().startswith('#'):
                     time_str = time.strftime("%m-%d %H:%M", time.localtime(timestamp))
                     user_marker = "<T>" if user.lower() in ["system", "admin"] else ""
                     # 插入到列表开头，保持时间从旧到新
                     formatted_messages.insert(0, f"{user_marker}[{time_str}] {user}: {content.strip()}")
                     actual_msg_count += 1
+                else: # PANDA_DEBUG
+                     # 更新日志，反映新的跳过原因
+                     starts_with_hash = content.strip().startswith('#') if content else False
+                     logger.debug(f"[ChatSummary PANDA_DEBUG] Skipping record (count): msg_id={msg_id}. Reason: content_empty={not bool(content)}, starts_with_hash={starts_with_hash}") # PANDA_DEBUG
+                # --- 修改结束 ---
 
             if not formatted_messages:
+                logger.debug(f"[ChatSummary PANDA_DEBUG] _get_chat_messages_by_count: No formatted messages after filtering.") # PANDA_DEBUG
                 return None, 0
 
+            logger.debug(f"[ChatSummary PANDA_DEBUG] _get_chat_messages_by_count returning {len(formatted_messages)} formatted messages, actual_msg_count={actual_msg_count}") # PANDA_DEBUG
             return "\n".join(formatted_messages), actual_msg_count
         except Exception as e:
             logger.error(f"[ChatSummary] 获取指定数量消息失败: {e}")
@@ -1014,77 +1062,85 @@ class ChatSummary(Plugin):
 
     # +++ 重构: 获取群昵称，优先使用 GeweChat API +++
     def _get_group_nickname(self, group_wxid: str) -> str:
-        """根据群 wxid 获取群昵称，优先尝试 GeweChat API。
-        如果 API 成功获取名称，则使用该名称。
-        其他所有情况 (API 禁用/失败/成功无名) 均返回 "本群"。
-        不再检查 config.json 中的 group_name_mapping。
-
-        Args:
-            group_wxid: 群聊的 wxid (chatroomId)。
-
-        Returns:
-            获取到的群聊名称或默认值 "本群"。
         """
-        # 1. 尝试 GeweChat API (如果启用且配置完整)
-        if self.gewechat_enabled:
-            # 1.1 检查缓存
-            if group_wxid in self.group_name_cache:
-                logger.debug(f"[ChatSummary] Found group nickname for {group_wxid} in cache.")
-                return self.group_name_cache[group_wxid]
+        根据群 wxid 从本地 tmp/wx849_rooms.json 文件获取群昵称。
+        移除了 GeweChat API 调用和缓存逻辑。
+        """
+        logger.debug(f"[ChatSummary] Attempting to get group nickname for '{group_wxid}' from local JSON.")
 
-            # 1.2 调用 API
-            api_url = self.gewechat_base_url.rstrip('/') + "/group/getChatroomInfo"
-            headers = {
-                'X-GEWE-TOKEN': self.gewechat_token,
-                'Content-Type': 'application/json'
-            }
-            payload = json.dumps({
-                "appId": self.gewechat_appid,
-                "chatroomId": group_wxid
-            })
+        # 假设项目根目录下的 tmp/wx849_rooms.json。
+        # 使用 Path 对象处理路径。
+        # 注意: 这里的相对路径 "tmp" 取决于 Python 脚本的当前工作目录。
+        # 如果插件总是在项目根目录下执行，这是可以的。
+        # 更健壮的方式可能是通过配置或计算得到项目根路径。
+        json_file_path = Path("tmp") / "wx849_rooms.json"
+        default_group_name = "本群"  # 默认群名
 
-            try:
-                logger.debug(f"[ChatSummary] Calling GeweChat API for group {group_wxid} at {api_url}")
-                response = requests.post(api_url, headers=headers, data=payload, timeout=10)
+        if not json_file_path.exists():
+            logger.warning(f"[ChatSummary] JSON file not found at {json_file_path}. Returning default name '{default_group_name}'.")
+            return default_group_name
 
-                if response.status_code == 200:
-                    try:
-                        result = response.json()
-                        if result.get("ret") == 200:
-                            nickName = result.get("data", {}).get("nickName")
-                            if nickName:
-                                logger.info(f"[ChatSummary] Successfully fetched group nickname '{nickName}' for {group_wxid} via GeweChat API.")
-                                self.group_name_cache[group_wxid] = nickName # Update cache
-                                return nickName
-                            else:
-                                logger.warning(f"[ChatSummary] GeweChat API returned success for {group_wxid} but nickname was missing. Falling back to default.")
-                                return "本群" # API Success but no name -> Default
+        try:
+            with open(json_file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            
+            if not content.strip():
+                logger.info(f"[ChatSummary] JSON file {json_file_path} is empty. Returning default name '{default_group_name}'.")
+                return default_group_name
+
+            parsed_json_data = json.loads(content)
+            
+            entries_to_check = []
+            if isinstance(parsed_json_data, dict):
+                logger.debug(f"[ChatSummary] JSON data is a dictionary, extracting values.")
+                entries_to_check = list(parsed_json_data.values())
+            elif isinstance(parsed_json_data, list):
+                logger.debug(f"[ChatSummary] JSON data is a list, using as is.")
+                entries_to_check = parsed_json_data
+            else:
+                logger.error(f"[ChatSummary] Data in {json_file_path} is not a list or dict. Returning default name '{default_group_name}'.")
+                return default_group_name
+
+            logger.debug(f"[ChatSummary] Processing {len(entries_to_check)} entries from JSON.")
+            for entry_idx, entry in enumerate(entries_to_check):
+                if isinstance(entry, dict):
+                    entry_chatroom_id = entry.get("chatroomId")
+                    entry_wxid_field = entry.get("wxid") # 有些地方可能是用 wxid 字段存群ID
+                    
+                    # 主要通过 chatroomId 匹配
+                    if entry_chatroom_id == group_wxid:
+                        nickname = entry.get("nickName")
+                        if nickname and isinstance(nickname, str) and nickname.strip():
+                            logger.info(f"[ChatSummary] Found nickname '{nickname}' for group '{group_wxid}' from chatroomId match in {json_file_path} (Entry {entry_idx}).")
+                            return nickname
                         else:
-                            error_msg = result.get("msg", "Unknown API logic error")
-                            logger.warning(f"[ChatSummary] GeweChat API returned logic error for {group_wxid}: ret={result.get('ret')}, msg='{error_msg}'. Falling back to default.")
-                            return "本群" # API logic error -> Default
-                    except json.JSONDecodeError as json_err:
-                        logger.error(f"[ChatSummary] Failed to parse GeweChat API JSON response for {group_wxid}: {json_err}. Response text: {response.text[:200]}... Falling back to default.")
-                        return "本群" # JSON error -> Default
-                    except Exception as parse_err:
-                         logger.error(f"[ChatSummary] Error processing GeweChat API response for {group_wxid}: {parse_err}. Falling back to default.", exc_info=True)
-                         return "本群" # Other parsing error -> Default
-                else:
-                    logger.error(f"[ChatSummary] GeweChat API request for {group_wxid} failed with status {response.status_code}. Response: {response.text[:200]}... Falling back to default.")
-                    return "本群" # HTTP error -> Default
+                            logger.warning(f"[ChatSummary] Group '{group_wxid}' found by chatroomId (Entry {entry_idx}), but nickName ('{nickname}') is invalid. Falling back.")
+                            # 不立即返回 default_group_name，允许后续通过 wxid 字段再次匹配（如果格式特殊）
 
-            except requests.exceptions.Timeout:
-                logger.error(f"[ChatSummary] GeweChat API request for {group_wxid} timed out. Falling back to default.")
-                return "本群" # Timeout -> Default
-            except requests.exceptions.RequestException as req_err:
-                logger.error(f"[ChatSummary] GeweChat API request for {group_wxid} failed: {req_err}. Falling back to default.")
-                return "本群" # Network/Request error -> Default
-            except Exception as e:
-                 logger.error(f"[ChatSummary] Unexpected error during GeweChat API call for {group_wxid}: {e}. Falling back to default.", exc_info=True)
-                 return "本群" # Unexpected error during API call -> Default
-        else: # API disabled or misconfigured
-            logger.debug(f"[ChatSummary] GeweChat API disabled or misconfigured for {group_wxid}. Falling back to default.")
-            return "本群"
+                    # 备选：如果 chatroomId 不匹配或 chatroomId 匹配但无有效 nickname，尝试通过 wxid 字段匹配 (确保它是群ID)
+                    if entry_wxid_field == group_wxid and isinstance(entry_wxid_field, str) and "@chatroom" in entry_wxid_field:
+                        nickname = entry.get("nickName")
+                        if nickname and isinstance(nickname, str) and nickname.strip():
+                            logger.info(f"[ChatSummary] Found nickname '{nickname}' for group '{group_wxid}' from wxid field match in {json_file_path} (Entry {entry_idx}).")
+                            return nickname
+                        else:
+                             logger.warning(f"[ChatSummary] Group '{group_wxid}' found by wxid field (Entry {entry_idx}), but nickName ('{nickname}') is invalid. Using default name for this entry.")
+                             # 如果 wxid 匹配但 nickName 无效，则此条目无法提供有效名称，继续循环寻找其他可能的更佳匹配
+                else:
+                    logger.debug(f"[ChatSummary] Skipping entry {entry_idx} as it is not a dictionary.")
+            
+            logger.warning(f"[ChatSummary] Group ID '{group_wxid}' not found or no valid nickname associated after checking all entries in {json_file_path}. Returning default name '{default_group_name}'.")
+            return default_group_name
+
+        except json.JSONDecodeError as e:
+            logger.error(f"[ChatSummary] Failed to decode JSON from {json_file_path}: {e}. Returning default name '{default_group_name}'.")
+            return default_group_name
+        except IOError as e:
+            logger.error(f"[ChatSummary] File I/O error for {json_file_path}: {e}. Returning default name '{default_group_name}'.")
+            return default_group_name
+        except Exception as e:
+            logger.error(f"[ChatSummary] Unexpected error in _get_group_nickname for {group_wxid}: {e}. Returning default name '{default_group_name}'.", exc_info=True)
+            return default_group_name
 
     # +++ 新增：清理函数 +++
     def _cleanup_output_files(self, directory: Path, max_age_hours: int):
